@@ -1,0 +1,132 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: faasfrontend-function-config
+  namespace: {{ .Values.global.namespace }}
+data:
+  faasfrontend_config.json: |-
+    {
+      "0-system-faasfrontend": {
+        "systemFunctionName":"0-system-faascontroller",
+        "signal":65,
+        "payload":{
+          "instanceNum": {{ .Values.global.systemFunc.faasFrontend.instanceNum }},
+          "azID": "1",
+          "cpu": {{ .Values.global.systemFunc.faasFrontend.cpu }},
+          "memory": {{ .Values.global.systemFunc.faasFrontend.memory }},
+          "image": "",
+          "version":"",
+          "clusterID":"cluster001",
+          "clusterName": "dsweb_cceturbo_bj4_auto_az1",
+          "regionName": "beijing4",
+          "affinity": {{ quote .Values.global.systemFunc.faasFrontend.affinity | default "\"\"" }},
+          "alarmConfig": {
+            "enableAlarm": false,
+            "minInsStartInterval": 15,
+            "minInsCheckInterval": 15,
+            "alarmLogConfig": {
+              "filepath": "/opt/logs/alarms",
+              "level": "Info",
+              "tick": 0,
+              "first": 0,
+              "thereafter": 0,
+              "singlesize": 500,
+              "threshold": 3,
+              "disable": false
+            },
+            "xiangYunFourConfig": {
+              "site": "cn_dev_default",
+              "tenantID": "T014",
+              "applicationID": "",
+              "serviceID": ""
+            }
+          },
+          "http": {
+              "resptimeout": 5,
+              "workerInstanceReadTimeOut": 5,
+              "maxRequestBodySize": 6,
+              "serverReadTimeout": {{ .Values.global.systemFunc.faasFrontend.serverReadTimeout }},
+              "serverWriteTimeout": {{ .Values.global.systemFunc.faasFrontend.serverWriteTimeout }},
+              "clientIdleTimeout": {{ .Values.global.systemFunc.faasFrontend.clientIdleTimeout }}
+          },
+          "businessType": 0,
+          "diskMonitorEnable": false,
+          "authenticationEnable": false,
+          "trafficLimitDisable": true,
+          "functionCapability": 1,
+          "dynamicPoolEnable": {{ .Values.global.systemFunc.faasFrontend.pool.enabled }},
+          "rawStsConfig": {
+            "stsEnable": {{ .Values.global.sts.enable }},
+            "serverConfig": {
+              "domain": {{ quote .Values.global.sts.serverDomain }},
+              "path": ""
+            }
+          },
+          "dataSystemConfig": {
+            "uploadWriteMode": "NoneL2Cache",
+            "executeWriteMode": "NoneL2Cache",
+            "uploadTTLSec": 86400,
+            "executeTTLSec": 1800,
+            "timeoutMs": 60000
+          },
+          "slaQuota": 1000,
+          "scaleDownTime": 60000,
+          "burstScaleNum": 1000,
+          "leaseSpan": 5000,
+          "functionLimitRate": 5000,
+          "dockerRootPath":"/var/lib/docker",
+          "invokeMaxRetryTimes": {{ .Values.global.systemFunc.faasFrontend.invokeMaxRetryTimes }},
+          "retry": {
+            "instanceExceptionRetry": {{ .Values.global.systemFunc.faasFrontend.retry.instanceExceptionRetry }}
+          },
+          "httpsConfig": {
+            "httpsEnable": {{ .Values.global.systemFunc.httpsEnabled }},
+            "tlsProtocol": "TLSv1.2",
+            "tlsCiphers": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+            "sslBasePath": {{ quote .Values.global.mutualSSLConfig.sslBasePath }},
+            "rootCAFile": "ca.crt",
+            "moduleCertFile": "module.crt",
+            "moduleKeyFile": "module.key",
+            "pwdFile": "cert_pwd",
+            "secretName": {{ quote .Values.global.mutualSSLConfig.secretName }},
+            "sslDecryptTool": {{ quote .Values.global.mutualSSLConfig.sslDecryptTool }}
+          },
+          "routerEtcd": {
+            "servers": ["{{ .Values.global.etcdManagement.detcd }}"],
+            {{- if eq .Values.global.etcdManagement.authType "TLS" }}
+            "sslEnable": true,
+            {{- else }}
+            "sslEnable": false,
+            {{- end}}
+            "user":"",
+            "password":"",
+            "authType": {{ quote .Values.global.etcdManagement.authType }},
+            "useSecret": {{ .Values.global.etcdManagement.useSecret }},
+            "secretName": {{ quote .Values.global.etcdManagement.secretName }}
+          },
+          "metaEtcd": {
+            "servers": ["{{ .Values.global.etcdManagement.metcd }}"],
+            {{- if eq .Values.global.etcdManagement.authType "TLS" }}
+            "sslEnable": true,
+            {{- else }}
+            "sslEnable": false,
+            {{- end}}
+            "user":"",
+            "password":"",
+            "authType": {{ quote .Values.global.etcdManagement.authType }},
+            "useSecret": {{ .Values.global.etcdManagement.useSecret }},
+            "secretName": {{ quote .Values.global.etcdManagement.secretName }}
+          },
+          "tlsConfig": {
+            "caContent": {{ quote .Values.global.systemFunc.tlsConfig.caContent }},
+            "keyContent": {{ quote .Values.global.systemFunc.tlsConfig.keyContent }},
+            "certContent": {{ quote .Values.global.systemFunc.tlsConfig.certContent }}
+          },
+          "sccConfig": {
+            "enable": {{ .Values.global.scc.enable }},
+            "secretName": {{ quote .Values.global.scc.secretName }},
+            "algorithm": {{ quote .Values.global.scc.algorithm }}
+          }
+        }
+      }
+    }

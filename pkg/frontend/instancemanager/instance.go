@@ -1,0 +1,254 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// Package instancemanager -
+package instancemanager
+
+import (
+	"sync"
+
+	"go.uber.org/zap"
+
+	"yuanrong.org/kernel/runtime/libruntime/api"
+
+	"frontend/pkg/common/faas_common/constant"
+	"frontend/pkg/common/faas_common/resspeckey"
+	"frontend/pkg/common/faas_common/types"
+	"frontend/pkg/frontend/subscriber"
+)
+
+var gInstanceScheduler = &FunctionInstancesMap{
+	lock:         sync.RWMutex{},
+	instancesMap: make(map[string]*functionInstanceMap),
+}
+
+var subject = subscriber.NewSubject()
+
+// GetInstanceSubject -
+func GetInstanceSubject() *subscriber.Subject {
+	return subject
+}
+
+// GetGlobalInstanceScheduler -
+func GetGlobalInstanceScheduler() *FunctionInstancesMap {
+	return gInstanceScheduler
+}
+
+// FunctionInstancesMap -
+type FunctionInstancesMap struct {
+	lock         sync.RWMutex
+	instancesMap map[string]*functionInstanceMap
+}
+
+type functionInstanceMap struct {
+	lock           sync.RWMutex
+	instanceQueues map[string]*functionInstanceQueue // key: resKey, value: *functionInstanceQueue
+}
+
+type functionInstanceQueue struct {
+	lock      sync.RWMutex
+	instances map[string]*types.InstanceSpecification // key: instanceId, value: *instance
+}
+
+// GetInstance -
+func (g *FunctionInstancesMap) GetInstance(funcKey, resSpecKey, instanceId string) *types.InstanceSpecification {
+	g.lock.RLock()
+	defer g.lock.RUnlock()
+	resInstancesMap, ok := g.instancesMap[funcKey]
+	if !ok {
+		return nil
+	}
+	return resInstancesMap.getInstance(resSpecKey, instanceId)
+}
+
+func (g *FunctionInstancesMap) addInstance(funcKey string, instance *types.InstanceSpecification,
+	logger api.FormatLogger) {
+	g.lock.Lock()
+	resInstancesMap, ok := g.instancesMap[funcKey]
+	if !ok {
+		resInstancesMap = &functionInstanceMap{
+			lock:           sync.RWMutex{},
+			instanceQueues: make(map[string]*functionInstanceQueue),
+		}
+		g.instancesMap[funcKey] = resInstancesMap
+	}
+	logger = logger.With(zap.Any("funcKey", funcKey))
+	g.lock.Unlock()
+	resInstancesMap.addInstance(instance, logger)
+}
+
+func (g *FunctionInstancesMap) delInstance(funcKey string, instance *types.InstanceSpecification,
+	logger api.FormatLogger) {
+	g.lock.Lock()
+	resInstancesMap, ok := g.instancesMap[funcKey]
+	logger = logger.With(zap.Any("funcKey", funcKey))
+	if !ok {
+		g.lock.Unlock()
+		return
+	}
+	g.lock.Unlock()
+	resInstancesMap.delInstance(instance, logger)
+	if resInstancesMap.size() == 0 {
+		g.lock.Lock()
+		if resInstancesMap.size() == 0 {
+			delete(g.instancesMap, funcKey)
+			logger.Infof("no instances in funcKey, delete this funcKey map")
+		}
+		g.lock.Unlock()
+	}
+}
+
+// GetRandomInstanceWithoutUnexpectedInstance -
+func (g *FunctionInstancesMap) GetRandomInstanceWithoutUnexpectedInstance(
+	funcKey string, resKey string, unexpectInstanceIds []string, logger api.FormatLogger) *types.InstanceSpecification {
+	logger = logger.With(zap.Any("resKey", resKey))
+	g.lock.RLock()
+	resInstanceMap, ok := g.instancesMap[funcKey]
+	g.lock.RUnlock()
+	if !ok {
+		logger.Errorf("the funcKey has no instance in instancesMap")
+		return nil
+	}
+	resInstanceMap.lock.RLock()
+	queue, ok := resInstanceMap.instanceQueues[resKey]
+	resInstanceMap.lock.RUnlock()
+	if !ok {
+		logger.Errorf("the resKey has no instance in funcKey instanceMap")
+		return nil
+	}
+
+	queue.lock.RLock()
+	defer queue.lock.RUnlock()
+
+	instances := make(map[string]*types.InstanceSpecification, len(queue.instances))
+	for k, v := range queue.instances {
+		instances[k] = v
+	}
+	for _, unexpectedInstanceId := range unexpectInstanceIds {
+		delete(instances, unexpectedInstanceId)
+	}
+
+	for _, v := range instances {
+		logger.Infof("choose instance: %s, total instance num: %d, unexpected instance num: %d", v.InstanceID,
+			len(queue.instances), len(unexpectInstanceIds))
+		return v
+	}
+	logger.Errorf("the resKey has no available instance in funcKey instanceMap, total instance num: %d, "+
+		"unexpected instance num: %d", len(queue.instances), len(unexpectInstanceIds))
+	return nil
+}
+
+func (f *functionInstanceMap) size() int {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+	return len(f.instanceQueues)
+}
+
+func (f *functionInstanceMap) getInstance(resSpecKey, instanceId string) *types.InstanceSpecification {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+	q, ok := f.instanceQueues[resSpecKey]
+	if !ok {
+		return nil
+	}
+	return q.getInstance(instanceId)
+}
+
+func (f *functionInstanceMap) addInstance(instance *types.InstanceSpecification, logger api.FormatLogger) {
+	f.lock.Lock()
+	resKey, err := resspeckey.GetResKeyFromStr(instance.CreateOptions[constant.ResourceSpecNote])
+	if err != nil {
+		f.lock.Unlock()
+		logger.Warnf("add instance failed, parse resKey failed, err: %s, resKeyStr: %s", err.Error(),
+			instance.CreateOptions[constant.ResourceSpecNote])
+		return
+	}
+	logger = logger.With(zap.Any("resKey", resKey.String()))
+	q, ok := f.instanceQueues[resKey.String()]
+	if !ok {
+		q = &functionInstanceQueue{
+			lock:      sync.RWMutex{},
+			instances: make(map[string]*types.InstanceSpecification),
+		}
+		f.instanceQueues[resKey.String()] = q
+	}
+	f.lock.Unlock()
+	q.addInstance(instance, logger)
+}
+
+func (f *functionInstanceMap) delInstance(instance *types.InstanceSpecification, logger api.FormatLogger) {
+	f.lock.Lock()
+	resKey, err := resspeckey.GetResKeyFromStr(instance.CreateOptions[constant.ResourceSpecNote])
+	if err != nil {
+		f.lock.Unlock()
+		logger.Warnf("no need delete instance, parse resKey failed, err: %s, resKeyStr: %s", err.Error(),
+			instance.CreateOptions[constant.ResourceSpecNote])
+		return
+	}
+	logger = logger.With(zap.Any("resKey", resKey))
+	q, ok := f.instanceQueues[resKey.String()]
+	if !ok {
+		f.lock.Unlock()
+		return
+	}
+	f.lock.Unlock()
+	q.delInstance(instance, logger)
+	if q.size() == 0 {
+		f.lock.Lock()
+		if q.size() == 0 {
+			delete(f.instanceQueues, resKey.String())
+			logger.Infof("no instances, delete this resKey map")
+		}
+		f.lock.Unlock()
+	}
+}
+
+func (i *functionInstanceQueue) addInstance(instance *types.InstanceSpecification, logger api.FormatLogger) {
+	i.lock.Lock()
+	defer i.lock.Unlock()
+	i.instances[instance.InstanceID] = instance
+	subject.PublishEvent(subscriber.Update, instance)
+	logger.Infof("add instance ok")
+}
+
+func (i *functionInstanceQueue) size() int {
+	i.lock.RLock()
+	defer i.lock.RUnlock()
+	return len(i.instances)
+}
+
+func (i *functionInstanceQueue) delInstance(instance *types.InstanceSpecification, logger api.FormatLogger) {
+	i.lock.Lock()
+	defer i.lock.Unlock()
+	_, ok := i.instances[instance.InstanceID]
+	if !ok {
+		logger.Infof("no need delete unexist instance")
+		return
+	}
+	delete(i.instances, instance.InstanceID)
+	subject.PublishEvent(subscriber.Delete, instance)
+	logger.Infof("delete instance ok")
+}
+
+func (i *functionInstanceQueue) getInstance(instanceId string) *types.InstanceSpecification {
+	i.lock.RLock()
+	defer i.lock.RUnlock()
+	instance, ok := i.instances[instanceId]
+	if !ok {
+		return nil
+	}
+	return instance
+}

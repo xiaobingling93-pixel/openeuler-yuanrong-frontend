@@ -1,0 +1,102 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: system-function-config
+  namespace: {{ .Values.global.namespace }}
+data:
+  system-function-config.json: |-
+    {
+      "0-system-faascontroller": {
+        "tenantID": "0",
+        "version": "$latest",
+        "memory": {{ .Values.global.systemFunc.faasController.memory }},
+        "cpu": {{ .Values.global.systemFunc.faasController.cpu }},
+        "instanceNum": {{ .Values.global.systemFunc.faasController.instanceNum }},
+        "schedulingOps": {"extension":{"schedule_policy":"monopoly"}},
+        "createOptions": {
+          "concurrentNum": "10",
+          "DELEGATE_ENCRYPT": "{\"metaEtcdPwd\":\"\"}",
+          "DELEGATE_POD_LABELS": "{\"systemFuncName\":\"faascontroller\"}",
+          "DELEGATE_RUNTIME_MANAGER": "{\"image\":\"\"}",
+          "DELEGATE_AFFINITY": {{ quote .Values.global.systemFunc.faasController.affinity | default "\"\"" }}
+        },
+        "args": {
+          "faasmanagerConfig": {
+            "affinity": {{ quote .Values.global.systemFunc.faasManager.affinity | default "\"\"" }},
+            "cpu": {{ .Values.global.systemFunc.faasManager.cpu | default 500 }},
+            "memory": {{ .Values.global.systemFunc.faasManager.memory | default 500 }},
+            "nodeSelector": {}
+          },
+          "managerInstanceNum": {{ .Values.global.systemFunc.faasManager.instanceNum }},
+          "enableRetry": true,
+          "nameSpace": {{ quote .Values.global.namespace }},
+          "clusterID":"cluster001",
+          "clusterName": "dsweb_cceturbo_bj4_auto_az1",
+          "regionName": "beijing4",
+          "alarmConfig": {
+            "enableAlarm": false,
+            "minInsStartInterval": 15,
+            "minInsCheckInterval": 15,
+            "alarmLogConfig": {
+              "filepath": "/opt/logs/alarms",
+          	  "level": "Info",
+          	  "tick": 0,
+              "first": 0,
+              "thereafter": 0,
+          	  "singlesize": 500,
+          	  "threshold": 3,
+              "disable": false
+            },
+            "xiangYunFourConfig": {
+              "site": "cn_dev_default",
+              "tenantID": "T014",
+              "applicationID": "",
+              "serviceID": ""
+            }
+          },
+          "rawStsConfig": {
+            "stsEnable": {{ .Values.global.sts.enable }},
+            "serverConfig": {
+              "domain": {{ quote .Values.global.sts.serverDomain }},
+              "path": ""
+            }
+          },
+          "routerEtcd": {
+            "servers": ["{{ .Values.global.etcdManagement.detcd }}"],
+            {{- if eq .Values.global.etcdManagement.authType "TLS" }}
+            "sslEnable": true,
+            {{- else }}
+            "sslEnable": false,
+            {{- end}}
+            "user":"",
+            "password":"",
+            "authType": {{ quote .Values.global.etcdManagement.authType }},
+            "useSecret": {{ .Values.global.etcdManagement.useSecret }},
+            "secretName": {{ quote .Values.global.etcdManagement.secretName }}
+          },
+          "metaEtcd": {
+            "servers": ["{{ .Values.global.etcdManagement.metcd }}"],
+            {{- if eq .Values.global.etcdManagement.authType "TLS" }}
+            "sslEnable": true,
+            {{- else }}
+            "sslEnable": false,
+            {{- end}}
+            "user":"",
+            "password":"",
+            "authType": {{ quote .Values.global.etcdManagement.authType }},
+            "useSecret": {{ .Values.global.etcdManagement.useSecret }},
+            "secretName": {{ quote .Values.global.etcdManagement.secretName }}
+          },
+          "tlsConfig": {
+            "caContent": {{ quote .Values.global.systemFunc.tlsConfig.caContent }},
+            "keyContent": {{ quote .Values.global.systemFunc.tlsConfig.keyContent }},
+            "certContent": {{ quote .Values.global.systemFunc.tlsConfig.certContent }}
+          },
+          "sccConfig": {
+            "enable": {{ .Values.global.scc.enable }},
+            "secretName": {{ quote .Values.global.scc.secretName }},
+            "algorithm": {{ quote .Values.global.scc.algorithm }}
+          }
+        }
+      }
+    }
