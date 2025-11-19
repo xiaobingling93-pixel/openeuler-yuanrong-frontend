@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  name: faasfrontend
+  namespace: {{ .Values.global.namespace }}
+spec:
+  externalTrafficPolicy: Cluster
+  ports:
+    - name: http
+      nodePort: {{ .Values.global.port.frontend }}
+      port: 8888
+      protocol: TCP
+      targetPort: 8888
+  selector:
+    systemFuncName: faasfrontend
+  type: NodePort
+  sessionAffinity: None
