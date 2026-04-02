@@ -426,7 +426,6 @@ func convert(ctx *types.InvokeProcessContext, funcSpec *commontype.FuncSpec, ins
 		TenantID:        funcSpec.FuncMetaData.TenantID,
 		InstanceID:      instanceId,
 		ForceInvoke:     forceInvoke,
-		IsInterrupted:   ctx.IsInterrupted,
 	}
 
 	// legacy
